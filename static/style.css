@@ -218,6 +218,21 @@ h1 {
   color: var(--accent);
 }
 
+.drop-hint {
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+kbd {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
 /* ── Chapter list ── */
 .chapter-list {
   list-style: none;
