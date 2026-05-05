@@ -1,0 +1,9 @@
+version: "3.9"
+services:
+  md2epub:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./workspace:/app/workspace
+      - ./dist:/app/dist

@@ -1,1 +1,38 @@
-workspace
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.env
+dist/
+build/
+*.pyc
+.mypy_cache/
+.pytest_cache/
+.tox/
+htmlcov/
+.coverage
+*.egg
+
+# Workspace (user uploads)
+workspace/
+!workspace/.gitkeep
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Docker
+*.log
+
+# Test artifacts
+.coverage
+coverage.xml

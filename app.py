@@ -2,9 +2,12 @@ import json
 import os
 import shutil
 import uuid
+from pathlib import Path
+from typing import Optional
 
-from flask import Flask, jsonify, render_template, request, send_from_directory
-from werkzeug.utils import secure_filename
+from fastapi import FastAPI, File, HTTPException, Request, UploadFile
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from modules import (
     file_loader,
@@ -21,8 +24,9 @@ DIST_DIR = os.path.join(BASE_DIR, "dist")
 os.makedirs(WORKSPACE_DIR, exist_ok=True)
 os.makedirs(DIST_DIR, exist_ok=True)
 
-app = Flask(__name__)
-app.config["MAX_CONTENT_LENGTH"] = 200 * 1024 * 1024  # 200 MB
+app = FastAPI()
+
+app.mount("/static", StaticFiles(directory=os.path.join(BASE_DIR, "static")), name="static")
 
 ALLOWED_MD = {".md", ".markdown"}
 ALLOWED_IMAGE = {".jpg", ".jpeg", ".png", ".gif"}
@@ -31,17 +35,12 @@ ALLOWED_ZIP = {".zip"}
 ALLOWED_JSON = {".json"}
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
 def _ext(filename: str) -> str:
     return os.path.splitext(filename)[1].lower()
 
 
 def _safe(filename: str) -> str:
-    return secure_filename(filename)
+    return Path(filename).name
 
 
 # ---------------------------------------------------------------------------
@@ -49,22 +48,24 @@ def _safe(filename: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-@app.route("/")
-def index():
-    return render_template("index.html")
+@app.get("/")
+async def index():
+    index_path = os.path.join(BASE_DIR, "templates", "index.html")
+    with open(index_path, "r", encoding="utf-8") as f:
+        content = f.read()
+    return HTMLResponse(content=content)
 
 
-@app.route("/api/status")
-def status():
+@app.get("/api/status")
+async def status():
     installed, version = validation_service.check_pandoc()
-    return jsonify({"pandoc": {"installed": installed, "version": version}})
+    return JSONResponse({"pandoc": {"installed": installed, "version": version}})
 
 
-@app.route("/api/files/upload", methods=["POST"])
-def upload_files():
-    files = request.files.getlist("files")
+@app.post("/api/files/upload")
+async def upload_files(files: list[UploadFile] = File(...)):
     if not files:
-        return jsonify({"error": "No files provided"}), 400
+        return JSONResponse({"error": "No files provided"}, status_code=400)
 
     results = []
     skipped = []
@@ -79,39 +80,41 @@ def upload_files():
             skipped.append(f.filename)
             continue
         dest = os.path.join(WORKSPACE_DIR, filename)
-        f.save(dest)
+        content = await f.read()
+        with open(dest, "wb") as out:
+            out.write(content)
         results.append({"name": filename, "path": dest})
 
     if not results:
-        return jsonify({"error": "No valid Markdown files uploaded"}), 400
+        return JSONResponse({"error": "No valid Markdown files uploaded"}, status_code=400)
 
-    return jsonify({"files": results, "skipped": skipped})
+    return JSONResponse({"files": results, "skipped": skipped})
 
 
-@app.route("/api/zip/upload", methods=["POST"])
-def upload_zip():
-    f = request.files.get("file")
-    if not f or not f.filename:
-        return jsonify({"error": "No file provided"}), 400
+@app.post("/api/zip/upload")
+async def upload_zip(file: UploadFile = File(...)):
+    if not file or not file.filename:
+        return JSONResponse({"error": "No file provided"}, status_code=400)
 
-    if _ext(f.filename) not in ALLOWED_ZIP:
-        return jsonify({"error": "File must be a ZIP archive"}), 400
+    if _ext(file.filename) not in ALLOWED_ZIP:
+        return JSONResponse({"error": "File must be a ZIP archive"}, status_code=400)
 
     zip_name = f"upload_{uuid.uuid4().hex}.zip"
     zip_path = os.path.join(WORKSPACE_DIR, zip_name)
-    f.save(zip_path)
+    content = await file.read()
+    with open(zip_path, "wb") as out:
+        out.write(content)
 
     extract_dir = os.path.join(WORKSPACE_DIR, f"zip_{uuid.uuid4().hex}")
     try:
         zip_importer.extract_zip(zip_path, extract_dir)
     except Exception as exc:
         os.remove(zip_path)
-        return jsonify({"error": f"Failed to extract ZIP: {exc}"}), 400
+        return JSONResponse({"error": f"Failed to extract ZIP: {exc}"}, status_code=400)
 
     os.remove(zip_path)
     contents = zip_importer.inspect_contents(extract_dir)
 
-    # Load manifest if present
     loaded_manifest = None
     if contents["manifest"]:
         try:
@@ -119,7 +122,6 @@ def upload_zip():
         except Exception:
             loaded_manifest = None
 
-    # Build ordered file list, honouring manifest order when available
     md_files = contents["md_files"]
     if loaded_manifest and loaded_manifest.get("files"):
         ordered = []
@@ -150,40 +152,46 @@ def upload_zip():
         ),
         "manifest": loaded_manifest,
     }
-    return jsonify(result)
+    return JSONResponse(result)
 
 
-@app.route("/api/assets/cover", methods=["POST"])
-def upload_cover():
-    f = request.files.get("file")
-    if not f or not f.filename:
-        return jsonify({"error": "No file provided"}), 400
-    if _ext(f.filename) not in ALLOWED_IMAGE:
-        return jsonify({"error": "Cover must be a JPG or PNG image"}), 400
-    filename = _safe(f.filename)
+@app.post("/api/assets/cover")
+async def upload_cover(file: UploadFile = File(...)):
+    if not file or not file.filename:
+        return JSONResponse({"error": "No file provided"}, status_code=400)
+    if _ext(file.filename) not in ALLOWED_IMAGE:
+        return JSONResponse({"error": "Cover must be a JPG or PNG image"}, status_code=400)
+    filename = _safe(file.filename)
     dest = os.path.join(WORKSPACE_DIR, filename)
-    f.save(dest)
-    return jsonify({"name": filename, "path": dest})
+    content = await file.read()
+    with open(dest, "wb") as out:
+        out.write(content)
+    return JSONResponse({"name": filename, "path": dest})
 
 
-@app.route("/api/assets/css", methods=["POST"])
-def upload_css():
-    f = request.files.get("file")
-    if not f or not f.filename:
-        return jsonify({"error": "No file provided"}), 400
-    if _ext(f.filename) not in ALLOWED_CSS:
-        return jsonify({"error": "CSS must be a .css file"}), 400
-    filename = _safe(f.filename)
+@app.post("/api/assets/css")
+async def upload_css(file: UploadFile = File(...)):
+    if not file or not file.filename:
+        return JSONResponse({"error": "No file provided"}, status_code=400)
+    if _ext(file.filename) not in ALLOWED_CSS:
+        return JSONResponse({"error": "CSS must be a .css file"}, status_code=400)
+    filename = _safe(file.filename)
     dest = os.path.join(WORKSPACE_DIR, filename)
-    f.save(dest)
-    return jsonify({"name": filename, "path": dest})
+    content = await file.read()
+    with open(dest, "wb") as out:
+        out.write(content)
+    return JSONResponse({"name": filename, "path": dest})
 
 
-@app.route("/api/build", methods=["POST"])
-def build():
-    data = request.get_json(silent=True)
+@app.post("/api/build")
+async def build(request: Request):
+    try:
+        data = await request.json()
+    except Exception:
+        return JSONResponse({"error": "Invalid request body"}, status_code=400)
+
     if not data:
-        return jsonify({"error": "Invalid request body"}), 400
+        return JSONResponse({"error": "Invalid request body"}, status_code=400)
 
     files = data.get("files", [])
     metadata = data.get("metadata", {})
@@ -197,11 +205,11 @@ def build():
 
     errors = validation_service.validate_build(files, cover_path, css_path)
     if errors:
-        return jsonify({"success": False, "log": "\n".join(errors)})
+        return JSONResponse({"success": False, "log": "\n".join(errors)})
 
     pandoc_ok, _ = validation_service.check_pandoc()
     if not pandoc_ok:
-        return jsonify(
+        return JSONResponse(
             {
                 "success": False,
                 "log": (
@@ -222,63 +230,68 @@ def build():
     if success:
         result["output_path"] = output_path
         result["output_filename"] = output_filename
-    return jsonify(result)
+    return JSONResponse(result)
 
 
-@app.route("/api/manifest/save", methods=["POST"])
-def save_manifest():
-    data = request.get_json(silent=True)
+@app.post("/api/manifest/save")
+async def save_manifest(request: Request):
+    try:
+        data = await request.json()
+    except Exception:
+        return JSONResponse({"error": "Invalid request body"}, status_code=400)
     if not data:
-        return jsonify({"error": "Invalid request body"}), 400
+        return JSONResponse({"error": "Invalid request body"}, status_code=400)
     manifest = data.get("manifest", {})
     save_path = os.path.join(WORKSPACE_DIR, "book.json")
     try:
         manifest_service.save_manifest(manifest, save_path)
-        return jsonify({"success": True, "path": save_path})
+        return JSONResponse({"success": True, "path": save_path})
     except Exception as exc:
-        return jsonify({"error": str(exc)}), 500
+        return JSONResponse({"error": str(exc)}, status_code=500)
 
 
-@app.route("/api/manifest/load", methods=["POST"])
-def load_manifest():
-    # Accept uploaded JSON file, or fall back to workspace/book.json
-    f = request.files.get("file")
-    if f and f.filename:
-        if _ext(f.filename) not in ALLOWED_JSON:
-            return jsonify({"error": "Manifest must be a .json file"}), 400
+@app.post("/api/manifest/load")
+async def load_manifest(request: Request, file: Optional[UploadFile] = File(None)):
+    if file and file.filename:
+        if _ext(file.filename) not in ALLOWED_JSON:
+            return JSONResponse({"error": "Manifest must be a .json file"}, status_code=400)
         try:
-            content = f.read().decode("utf-8")
-            manifest = json.loads(content)
-            return jsonify({"manifest": manifest})
+            content = await file.read()
+            manifest = json.loads(content.decode("utf-8"))
+            return JSONResponse({"manifest": manifest})
         except Exception as exc:
-            return jsonify({"error": f"Invalid manifest file: {exc}"}), 400
+            return JSONResponse({"error": f"Invalid manifest file: {exc}"}, status_code=400)
 
     save_path = os.path.join(WORKSPACE_DIR, "book.json")
     if not os.path.isfile(save_path):
-        return jsonify({"error": "No saved project found in workspace"}), 404
+        return JSONResponse({"error": "No saved project found in workspace"}, status_code=404)
     try:
         manifest = manifest_service.load_manifest(save_path)
-        return jsonify({"manifest": manifest})
+        return JSONResponse({"manifest": manifest})
     except Exception as exc:
-        return jsonify({"error": str(exc)}), 500
+        return JSONResponse({"error": str(exc)}, status_code=500)
 
 
-@app.route("/api/output/<path:filename>")
-def download_output(filename):
+@app.get("/api/output/{filename}")
+async def download_output(filename: str):
     safe = _safe(filename)
-    return send_from_directory(DIST_DIR, safe, as_attachment=True)
+    file_path = os.path.join(DIST_DIR, safe)
+    if not os.path.isfile(file_path):
+        raise HTTPException(status_code=404, detail="File not found")
+    return FileResponse(file_path, filename=safe, media_type="application/epub+zip")
 
 
-@app.route("/api/workspace/clear", methods=["POST"])
-def clear_workspace():
+@app.post("/api/workspace/clear")
+async def clear_workspace():
     for item in os.listdir(WORKSPACE_DIR):
         item_path = os.path.join(WORKSPACE_DIR, item)
         if os.path.isfile(item_path):
             os.remove(item_path)
         elif os.path.isdir(item_path):
             shutil.rmtree(item_path)
-    return jsonify({"success": True})
+    return JSONResponse({"success": True})
 
 
 if __name__ == "__main__":
-    app.run(debug=True, port=5000)
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
