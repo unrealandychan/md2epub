@@ -84,8 +84,11 @@ def _run_pandoc(
         cmd += ["--metadata", f'author={metadata["author"]}']
     if metadata.get("language"):
         cmd += ["--metadata", f'lang={metadata["language"]}']
-    if metadata.get("toc"):
-        cmd.append("--toc")
+    # NOTE: --toc is intentionally omitted for epub3.  Pandoc always writes a
+    # nav.xhtml navigation document (required by EPUB3 spec) which Kobo uses for
+    # its built-in chapter menu.  Passing --toc additionally inserts an inline
+    # <nav epub:type="toc"> content page into the spine; Kobo's firmware treats
+    # that element specially and either renders it as a blank page or crashes.
     if cover_path:
         cmd.append(f"--epub-cover-image={cover_path}")
     if effective_css:

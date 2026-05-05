@@ -36,6 +36,13 @@ h1, h2, h3, h4, h5, h6 {
   page-break-after: auto;
 }
 
+/* Inline TOC nav page — Kobo bug: epub:type="toc" triggers blank-page/crash.
+ * If an inline TOC page is ever included, prevent page-break issues. */
+nav {
+  page-break-after: auto;
+  page-break-before: auto;
+}
+
 p {
   margin: 0 0 0.6em 0;
   orphans: 2;
