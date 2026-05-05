@@ -1,7 +1,25 @@
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
+import tempfile
+
+from modules.preprocessor import preprocess_files
+
+# Path to the fallback Kobo-safe CSS shipped with this app
+_HERE = os.path.dirname(os.path.abspath(__file__))
+_DEFAULT_CSS = os.path.join(_HERE, '..', 'static', 'kobo.css')
+
+# Prefer Homebrew pandoc (3.x) over any older system-wide install.
+# On Apple Silicon Macs, Homebrew lands in /opt/homebrew; on Intel in /usr/local.
+_PANDOC_BIN = next(
+    (p for p in (
+        '/opt/homebrew/bin/pandoc',
+        '/usr/local/homebrew/bin/pandoc',
+    ) if os.path.isfile(p)),
+    'pandoc',  # fall back to whatever is on PATH
+)
 
 
 def build_epub(
@@ -26,7 +44,39 @@ def build_epub(
     """
     os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
 
-    cmd = ["pandoc"] + files + ["-o", output_path, "--to=epub3"]
+    # ── Step 1: preprocess Markdown to strip Hugo/Jekyll shortcodes ──────────
+    # Shortcode tags are passed through literally by Pandoc; Kobo's strict
+    # EPUB XML parser rejects them, causing "unreadable" pages.
+    tmp_dir = tempfile.mkdtemp(prefix='md2epub_')
+    try:
+        processed = preprocess_files(files, tmp_dir)
+        success, log = _run_pandoc(processed, output_path, metadata, cover_path, css_path)
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+
+    return success, log
+
+
+def _run_pandoc(
+    files: list,
+    output_path: str,
+    metadata: dict,
+    cover_path: str | None,
+    css_path: str | None,
+) -> tuple:
+    # Use caller's CSS, or fall back to the bundled Kobo-safe stylesheet.
+    # The fallback fixes the blank-page bug (Pandoc issue #8435) and the
+    # footnote rendering bug (#9851) that only appear on Kobo firmware.
+    effective_css = css_path or (
+        os.path.normpath(_DEFAULT_CSS) if os.path.isfile(os.path.normpath(_DEFAULT_CSS)) else None
+    )
+
+    cmd = [_PANDOC_BIN] + files + [
+        "-o", output_path,
+        "--to=epub3",
+        # Each H1 starts a new EPUB chapter — required for Kobo chapter nav
+        "--epub-chapter-level=1",
+    ]
 
     if metadata.get("title"):
         cmd += ["--metadata", f'title={metadata["title"]}']
@@ -38,8 +88,8 @@ def build_epub(
         cmd.append("--toc")
     if cover_path:
         cmd.append(f"--epub-cover-image={cover_path}")
-    if css_path:
-        cmd.append(f"--css={css_path}")
+    if effective_css:
+        cmd.append(f"--css={effective_css}")
 
     try:
         result = subprocess.run(
