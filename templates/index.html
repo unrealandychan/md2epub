@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>md → Kobo EPUB Builder</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<header>
+  <div class="header-inner">
+    <div class="header-title">
+      <span class="logo">📖</span>
+      <h1>md → Kobo EPUB Builder</h1>
+    </div>
+    <div id="pandoc-status" class="status-badge checking">
+      <span class="status-dot"></span>
+      <span class="status-text">Checking Pandoc…</span>
+    </div>
+  </div>
+</header>
+
+<main class="layout">
+
+  <!-- ── Column 1: Import + Chapters ── -->
+  <div class="col col-left">
+
+    <section class="panel" id="panel-import">
+      <h2 class="panel-title">Import</h2>
+      <div class="import-row">
+        <label class="btn btn-primary" for="md-file-input">
+          + Add Markdown Files
+          <input id="md-file-input" type="file" accept=".md,.markdown" multiple hidden>
+        </label>
+        <label class="btn btn-secondary" for="zip-file-input">
+          ⬆ Import ZIP Project
+          <input id="zip-file-input" type="file" accept=".zip" hidden>
+        </label>
+      </div>
+      <div id="drop-zone" class="drop-zone">
+        <p>or drag &amp; drop <strong>.md</strong> files here</p>
+      </div>
+      <div id="import-error" class="alert alert-error" style="display:none"></div>
+    </section>
+
+    <section class="panel" id="panel-chapters">
+      <div class="panel-header">
+        <h2 class="panel-title">Chapters <span id="chapter-count" class="badge">0</span></h2>
+        <div class="sort-controls">
+          <button id="sort-az" class="btn btn-small" title="Sort alphabetically">A→Z</button>
+          <button id="sort-natural" class="btn btn-small" title="Sort naturally (1, 2… 10)">1→9</button>
+        </div>
+      </div>
+      <ul id="chapter-list" class="chapter-list">
+        <li class="empty-hint">No files loaded. Import Markdown files or a ZIP project above.</li>
+      </ul>
+    </section>
+
+  </div>
+
+  <!-- ── Column 2: Metadata + Assets + Build + Project ── -->
+  <div class="col col-right">
+
+    <section class="panel" id="panel-metadata">
+      <h2 class="panel-title">Metadata</h2>
+      <div class="form-grid">
+        <div class="form-group">
+          <label for="meta-title">Title</label>
+          <input type="text" id="meta-title" placeholder="My Book">
+        </div>
+        <div class="form-group">
+          <label for="meta-author">Author</label>
+          <input type="text" id="meta-author" placeholder="Author Name">
+        </div>
+        <div class="form-group">
+          <label for="meta-language">Language</label>
+          <input type="text" id="meta-language" value="en-US" placeholder="en-US">
+        </div>
+        <div class="form-group">
+          <label for="meta-filename">Output Filename</label>
+          <input type="text" id="meta-filename" value="book.epub" placeholder="book.epub">
+        </div>
+        <div class="form-group form-group-full">
+          <label class="checkbox-label">
+            <input type="checkbox" id="meta-toc" checked>
+            Include Table of Contents
+          </label>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel" id="panel-assets">
+      <h2 class="panel-title">Assets</h2>
+      <div class="asset-row">
+        <span class="asset-label">Cover Image</span>
+        <div class="asset-control">
+          <span id="cover-name" class="asset-filename muted">None</span>
+          <label class="btn btn-small" for="cover-input">Browse</label>
+          <input id="cover-input" type="file" accept=".jpg,.jpeg,.png,.gif" hidden>
+          <button id="cover-clear" class="btn btn-small btn-danger" style="display:none" title="Remove cover">✕</button>
+        </div>
+      </div>
+      <div class="asset-row">
+        <span class="asset-label">EPUB CSS</span>
+        <div class="asset-control">
+          <span id="css-name" class="asset-filename muted">None</span>
+          <label class="btn btn-small" for="css-input">Browse</label>
+          <input id="css-input" type="file" accept=".css" hidden>
+          <button id="css-clear" class="btn btn-small btn-danger" style="display:none" title="Remove CSS">✕</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel" id="panel-build">
+      <h2 class="panel-title">Build</h2>
+      <button id="build-btn" class="btn btn-build">▶ Build EPUB</button>
+      <div id="build-spinner" class="spinner" style="display:none"></div>
+      <div id="build-result" style="display:none">
+        <div id="build-log" class="build-log"></div>
+        <div id="build-output" class="build-output" style="display:none">
+          <span class="output-label">Output:</span>
+          <span id="output-filename" class="output-path"></span>
+          <a id="download-link" class="btn btn-small btn-success" href="#">⬇ Download</a>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel" id="panel-project">
+      <h2 class="panel-title">Project</h2>
+      <div class="project-actions">
+        <button id="save-btn" class="btn btn-secondary">💾 Save Project</button>
+        <label class="btn btn-secondary" for="load-manifest-input">
+          📂 Load Project
+          <input id="load-manifest-input" type="file" accept=".json" hidden>
+        </label>
+        <button id="reset-btn" class="btn btn-danger">↺ Reset</button>
+      </div>
+      <div id="project-msg" class="alert" style="display:none"></div>
+    </section>
+
+  </div>
+</main>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
